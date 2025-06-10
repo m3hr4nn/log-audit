@@ -1,148 +1,77 @@
 import os
 import re
 import socket
-import time 
+import time
 import bz2
-import pandas as pd 
+import pandas as pd
 
 start = time.time()
-# Output file
-FileNameOutPut = time.strftime("%Y%m%d-%H%M")
-YourHostName = socket.gethostname()
-OutputFilename = os.path.normpath(YourHostName + "_" + FileNameOutPut + "ParsedLines.csv")
 
-# Regex used to match relevant loglines
-to_find = ['shutdown',
-'reboot',
-'mkfs',
-'kill -9',
-'sysctl -w',
-'sysctl  -p',
-'crontab <',
-'crontab -e',
-'chmod',
-'chown',
-'mv',
-'ipcrm',
-'passwd',
-'rm',
-'rcnfsserver',
-'chage',
-'vi listener.ora',
-'vi sqlnet.ora',
-'vi tnsnames.ora',
-'imp',
-'impdb',
-'sqlldr',
-'lsnrctl stop',
-'shutdown immediate',
-'init.crs stop',
-'service corosync stop',
-'service corosync force-stop',
-'umount',
-'pvcreate',
-'vgcreate',
-'vgremove',
-'lvcreate',
-'lvremove',
-'vgchange -a',
-'vgextend',
-'lvextend',
-'fsck',
-'cachedel.sh',
-'dataload',
-'hostname -s',
-'date -s',
-'tzselect',
-'ln -sf ',
-'rcntp stop',
-'service ntp stop ',
-'alter user',
-'ALTER TABLESPACE',
-'ADD DATAFILE ',
-'cfgrefresh',
-'ifconfig',
-'moduleadm',
-'jmap',
-'stopbes',
-'shutdown',
-'re',
-'stopapp',
-'password',
-'stop',
-'mqConsole.sh',
-'hwZkCli.sh',
-'wrapper.sh',
-'log.sh changeLogLevel -l debug',
-'FLUSHDB',
-'FLUSHALL',
-'stopcsp',
-'debug',
-'redis-cli',
-'ssoconfig.xml',
-'setenv.sh',
-'setvmargs.sh',
-'openas.cluster.xml',
-'sharding.configuration.xml',
-'stop_netrix',
-'vsearch.yml',
-'curl -XPUT',
-'reload',
-'stop_monitor',
-'mdscmd',
-'dfsadmin',
-'hdfs dfs',
-'etl.cshrc',
-'\*.conf'
-'\*site.xml', '\*.properties']
+# Setup output filename
+timestamp = time.strftime("%Y%m%d-%H%M")
+hostname = socket.gethostname()
+output_filename = os.path.normpath(f"{hostname}_{timestamp}_ParsedLines.csv")
 
-to_find = [i + "\\b" for i in to_find]
-to_find = ['\\' + i if '*' in i else i for i in to_find]
-regex_pattern = r'\b{}'.format('|\\b'.join(to_find))
+# Load high-risk commands from external file
+def load_commands(file_path):
+    commands = []
+    try:
+        with open(file_path, "r") as f:
+            for line in f:
+                cmd = line.strip()
+                if cmd:
+                    commands.append(cmd)
+    except FileNotFoundError:
+        print(f"Command file '{file_path}' not found.")
+        exit(1)
+    return commands
 
-with open(OutputFilename, "w") as out_file:
-    out_file.write("")
+# Convert commands to regex pattern
+def build_regex_pattern(commands):
+    commands = [re.escape(cmd) + r"\b" if "*" not in cmd else cmd for cmd in commands]
+    return r'\b' + r'|\b'.join(commands)
 
+# Log parser
 data = {'command': [], 'logs': []}
-# ______________________________________
-def log_parser(input_lines):
-    
-    for line in input_lines:   
-        if re.search(regex_pattern, str(line)):
-            data['command'].append(("|".join(re.findall(regex_pattern, str(line)))))
-            data['logs'].append(str(line))        
-    # print('logs parsed sucessfully')
+def log_parser(input_lines, regex_pattern):
+    for line in input_lines:
+        line_str = str(line)
+        if re.search(regex_pattern, line_str):
+            found = "|".join(re.findall(regex_pattern, line_str))
+            data['command'].append(found)
+            data['logs'].append(line_str)
 
-# ________________________________________________________________________________
-
-def file_checker():
-
+# Process files
+def file_checker(regex_pattern):
     directory = input('Please enter a directory: ')
-    if (os.path.isdir(directory)) is not False:
-        for root, folders, files in os.walk(directory):
-            if len(files) != 0: 
-                for parse in files:
-                    try:
-                        if parse.endswith("bz2"):
-                            print(root + "\{}".format(parse))
-                            un_zipped = bz2.BZ2File(root + "\{}".format(parse))
-                            input_file = un_zipped.readlines()
-                            # print('no problem')
-                            log_parser(input_file)
-                            # print('process complete')
-                        else: 
-                            print(root + "\{}".format(parse))
-                            with open(root + "\{}".format(parse), "rb") as in_file:
-                                # print('start to process log')
-                                input_file = in_file.readlines()
-                                log_parser(input_file)
-                                # print('finished process')
-                    except:
-                        print('an error occured', parse)
-    else:
-        print("It is not a valid directory")
-       
-file_checker()
-result = pd.DataFrame.from_dict(data)  
-result.to_csv(OutputFilename + '.csv')   
-print(time.time() - start)
+    if not os.path.isdir(directory):
+        print("It is not a valid directory.")
+        return
+
+    for root, _, files in os.walk(directory):
+        for filename in files:
+            file_path = os.path.join(root, filename)
+            try:
+                print(file_path)
+                if filename.endswith(".bz2"):
+                    with bz2.BZ2File(file_path, "rb") as f:
+                        input_lines = f.readlines()
+                else:
+                    with open(file_path, "rb") as f:
+                        input_lines = f.readlines()
+                log_parser(input_lines, regex_pattern)
+            except Exception as e:
+                print(f"An error occurred with file {filename}: {e}")
+
+# Run the full flow
+command_file = "commands.txt"  # <- change this if you use another filename
+high_risk_commands = load_commands(command_file)
+regex_pattern = build_regex_pattern(high_risk_commands)
+
+file_checker(regex_pattern)
+
+# Save results to CSV
+df = pd.DataFrame.from_dict(data)
+df.to_csv(output_filename, index=False)
+
+print("Finished in", round(time.time() - start, 2), "seconds")
