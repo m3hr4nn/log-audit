@@ -1,0 +1,7 @@
+shutdown
+reboot
+mkfs
+kill -9
+chmod
+*.conf
+site.xml
