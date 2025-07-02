@@ -1,0 +1,6 @@
+shutdown
+reboot
+mkfs
+kill -9
+chmod
+rm -rf
