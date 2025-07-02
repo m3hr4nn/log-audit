@@ -45,12 +45,14 @@
 ## 🧩 Custom Commands
 
 Define your own suspicious or tracked commands by creating a `commands.txt` file next to the script:
-reboot
-shutdown
-systemctl
-iptables
-rm -rf
 
+- reboot
+- shutdown
+- systemctl
+- iptables
+- rm -rf
+- ...
+  
 If no file is found, LogPatrol will use a default list of critical commands.
 
 ---
